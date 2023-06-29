@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -99,6 +100,8 @@ func check(source resource.Source, from *resource.Version) (resource.CheckRespon
 
 	if source.Tag != "" {
 		return checkTag(repo.Tag(source.Tag.String()), source, from, opts...)
+	} else if source.Regex != "" {
+		return checkRepository(repo, source, from, opts...)
 	} else {
 		return checkRepository(repo, source, from, opts...)
 	}
@@ -151,41 +154,50 @@ func checkRepository(repo name.Repository, source resource.Source, from *resourc
 				verStr = strings.TrimSuffix(identifier, "-"+source.Variant)
 			}
 
-			ver, err = semver.NewVersion(verStr)
-			if err != nil {
-				// not a version
-				continue
-			}
-
-			if constraint != nil && !constraint.Check(ver) {
-				// semver constraint not met
-				continue
-			}
-
-			pre := ver.Prerelease()
-			if pre != "" {
-				// pre-releases not enabled; skip
-				if !source.PreReleases {
+			// If regex option is present, we ignore all SemVer constraints
+			if source.Regex != "" {
+				regex, _ := regexp.Compile(source.Regex)
+				if !regex.MatchString(identifier) {
+					// Does not match regex string provided
+					continue
+				}
+			} else {
+				ver, err = semver.NewVersion(verStr)
+				if err != nil {
+					// not a version
 					continue
 				}
 
-				// contains additional variant
-				if strings.Contains(pre, "-") {
+				if constraint != nil && !constraint.Check(ver) {
+					// semver constraint not met
 					continue
 				}
 
-				if !strings.HasPrefix(pre, "alpha") &&
-					!strings.HasPrefix(pre, "beta") &&
-					!strings.HasPrefix(pre, "rc") {
-					// additional variant, not a prerelease segment
+				pre := ver.Prerelease()
+				if pre != "" {
+					// pre-releases not enabled; skip
+					if !source.PreReleases {
+						continue
+					}
+
+					// contains additional variant
+					if strings.Contains(pre, "-") {
+						continue
+					}
+
+					if !strings.HasPrefix(pre, "alpha") &&
+						!strings.HasPrefix(pre, "beta") &&
+						!strings.HasPrefix(pre, "rc") {
+						// additional variant, not a prerelease segment
+						continue
+					}
+				}
+
+				if cursorVer != nil && (cursorVer.GreaterThan(ver) || cursorVer.Equal(ver)) {
+					// optimization: don't bother fetching digests for lesser (or equal but
+					// less specific, i.e. 6.3 vs 6.3.0) version tags
 					continue
 				}
-			}
-
-			if cursorVer != nil && (cursorVer.GreaterThan(ver) || cursorVer.Equal(ver)) {
-				// optimization: don't bother fetching digests for lesser (or equal but
-				// less specific, i.e. 6.3 vs 6.3.0) version tags
-				continue
 			}
 		}
 
