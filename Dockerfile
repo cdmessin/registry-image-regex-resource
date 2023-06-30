@@ -1,4 +1,4 @@
-ARG base_image
+ARG base_image=paketobuildpacks/run-jammy-base:latest
 ARG builder_image=concourse/golang-builder
 
 FROM ${builder_image} as builder

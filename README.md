@@ -1,22 +1,29 @@
-# Registry Image Resource
+# Registry Image Regex Resource
 
 Supports checking, fetching, and pushing of images to Docker registries.
-This resource can be used in two ways: [with `tag`
-specified](#check-with-tag-discover-new-digests-for-the-tag) and [without
-`tag`](#check-without-tag-discover-semver-tags).
+This resource can be used in three ways: [with `tag`
+specified](#check-step-check-script-with-tag-discover-new-digests-for-the-tag) [with `tag_regex`](#check-step-check-script-with-tag_regex-discover-tags-matching-regex)and [without
+`tag` or `tag_regex`](#check-step-check-script-without-tag-discover-semver-tags).
 
 With `tag` specified, `check` will detect changes to the digest the tag points
 to, and `out` will always push to the specified tag. This is to be used in
 simpler cases where no real versioning exists.
+
+With `regex` specified, `check` will instead detect tags based on the regex
+provided
 
 With `tag` omitted, `check` will instead detect tags based on semver versions
 (e.g. `1.2.3`) and return them in semver order. With `variant` included,
 `check` will only detect semver tags that include the variant suffix (e.g.
 `1.2.3-stretch`).
 
-_This resource comes with Concourse by default. You can override the version
-you use within your pipeline if the built-in one is not working for you for
-some reason_
+_This custom resource does not come with Concourse by default. It should be pulled in the resource_types array like so:_
+```
+- name: registry-image-regex
+  type: registry-image
+  source:
+    repository: containers.cisco.com/dsig2/registry-image-regex-resource
+```
 
 ## Comparison to `docker-image` resource
 
@@ -40,6 +47,13 @@ differences:
   Docker Image resource grew way too large and complicated. There are simply
   too many ways to build and publish Docker images. It will be easier to
   support many smaller resources + tasks rather than one huge interface.
+
+## Comparison to `registry-image` resource
+
+This resource is intended as an improvement upon the [Registry Image
+resource](https://github.com/concourse/registry-image-resource). 
+
+* The only difference in this version is that it supports the tag_regex parameter
 
 
 ## Source Configuration
@@ -77,6 +91,16 @@ differences:
     <td>
     Instead of monitoring semver tags, monitor a single tag for changes (based
     on digest).
+    </td>
+  </tr>
+    <tr>
+    <td><code>tag_regex</code> <em>(Optional)</em></td>
+    <td>
+    Instead of monitoring semver tags, monitor for tags based on a regex provided.
+    <br>The syntax of the regular expressions accepted is the same
+    general syntax used by Perl, Python, and other languages. More precisely,
+    it is the syntax accepted by RE2 and described at https://golang.org/s/re2syntax
+    <br>Note if used, this will override all Semver constraints and features
     </td>
   </tr>
   <tr>
@@ -336,6 +360,11 @@ registry_key: |
 Reports the current digest that the registry has for the tag configured in
 `source`.
 
+### `check` Step (`check` script) with `tag_regex`: discover tags matching regex
+
+Reports the current digest that the registry has for tags matching the regex
+configured in `source`.
+
 ### `check` Step (`check` script) without `tag`: discover semver tags
 
 Detects tags which contain semver version numbers. Version numbers do not
@@ -588,6 +617,10 @@ going to be re-used.
   work.
 * go mod is used for dependency management of the golang packages.
 
+### Docker build args:
+ - `base_image` _default: paketobuildpacks/run-jammy-base:latest_
+ - `builder_image` _default: concourse/golang-builder_
+
 ### Running the tests
 
 The tests have been embedded with the `Dockerfile`; ensuring that the testing
@@ -598,7 +631,7 @@ will stop the build.
 Run the tests with the following commands:
 
 ```sh
-docker build -t registry-image-resource --target tests --build-arg base_image=paketobuildpacks/run-jammy-base:latest .
+docker build -t registry-image-regex-resource --target tests .
 
 ```
 
@@ -611,7 +644,7 @@ dockerhub repo, and one GCR repo. The `docker build` step requires setting
 Run the tests with the following command:
 
 ```sh
-docker build . -t registry-image-resource --target tests \
+docker build . -t registry-image-regex-resource --target tests \
   --build-arg DOCKER_PRIVATE_USERNAME="some-username" \
   --build-arg DOCKER_PRIVATE_PASSWORD="some-password" \
   --build-arg DOCKER_PRIVATE_REPO="some/repo" \
