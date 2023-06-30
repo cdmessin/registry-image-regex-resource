@@ -154,50 +154,41 @@ func checkRepository(repo name.Repository, source resource.Source, from *resourc
 				verStr = strings.TrimSuffix(identifier, "-"+source.Variant)
 			}
 
-			// If regex option is present, we ignore all SemVer constraints
-			if source.Regex != "" {
-				regex, _ := regexp.Compile(source.Regex)
-				if !regex.MatchString(identifier) {
-					// Does not match regex string provided
+			ver, err = semver.NewVersion(verStr)
+			if err != nil {
+				// not a version
+				continue
+			}
+
+			if constraint != nil && !constraint.Check(ver) {
+				// semver constraint not met
+				continue
+			}
+
+			pre := ver.Prerelease()
+			if pre != "" {
+				// pre-releases not enabled; skip
+				if !source.PreReleases {
 					continue
 				}
-			} else {
-				ver, err = semver.NewVersion(verStr)
-				if err != nil {
-					// not a version
+
+				// contains additional variant
+				if strings.Contains(pre, "-") {
 					continue
 				}
 
-				if constraint != nil && !constraint.Check(ver) {
-					// semver constraint not met
+				if !strings.HasPrefix(pre, "alpha") &&
+					!strings.HasPrefix(pre, "beta") &&
+					!strings.HasPrefix(pre, "rc") {
+					// additional variant, not a prerelease segment
 					continue
 				}
+			}
 
-				pre := ver.Prerelease()
-				if pre != "" {
-					// pre-releases not enabled; skip
-					if !source.PreReleases {
-						continue
-					}
-
-					// contains additional variant
-					if strings.Contains(pre, "-") {
-						continue
-					}
-
-					if !strings.HasPrefix(pre, "alpha") &&
-						!strings.HasPrefix(pre, "beta") &&
-						!strings.HasPrefix(pre, "rc") {
-						// additional variant, not a prerelease segment
-						continue
-					}
-				}
-
-				if cursorVer != nil && (cursorVer.GreaterThan(ver) || cursorVer.Equal(ver)) {
-					// optimization: don't bother fetching digests for lesser (or equal but
-					// less specific, i.e. 6.3 vs 6.3.0) version tags
-					continue
-				}
+			if cursorVer != nil && (cursorVer.GreaterThan(ver) || cursorVer.Equal(ver)) {
+				// optimization: don't bother fetching digests for lesser (or equal but
+				// less specific, i.e. 6.3 vs 6.3.0) version tags
+				continue
 			}
 		}
 
