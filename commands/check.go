@@ -313,6 +313,8 @@ func checkRepositoryRegex(repo name.Repository, source resource.Source, from *re
 
 		tagDigests[identifier] = digest.String()
 
+		versionTags[identifier] = tagRef
+
 		digestVersions[digest.String()] = identifier
 	}
 
