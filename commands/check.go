@@ -101,7 +101,7 @@ func check(source resource.Source, from *resource.Version) (resource.CheckRespon
 	if source.Tag != "" {
 		return checkTag(repo.Tag(source.Tag.String()), source, from, opts...)
 	} else if source.Regex != "" {
-		return checkRepository(repo, source, from, opts...)
+		return checkRepositoryRegex(repo, source, from, opts...)
 	} else {
 		return checkRepository(repo, source, from, opts...)
 	}
@@ -282,17 +282,93 @@ func checkRepository(repo name.Repository, source resource.Source, from *resourc
 	return response, nil
 }
 
+func checkRepositoryRegex(repo name.Repository, source resource.Source, from *resource.Version, opts ...remote.Option) (resource.CheckResponse, error) {
+	tags, err := remote.List(repo, opts...)
+	if err != nil {
+		return resource.CheckResponse{}, fmt.Errorf("list repository tags: %w", err)
+	}
+
+	versionTags := map[string]name.Tag{}
+	tagDigests := map[string]string{}
+	digestVersions := map[string]string{}
+
+	if from != nil {
+		// assess the 'from' tag first so we can skip lower version numbers
+		sort.Slice(tags, func(i, j int) bool {
+			return tags[i] == from.Tag
+		})
+	}
+
+	for _, identifier := range tags {
+		// I erased some stuff here for the "latest" tag, and not sure if that's a problem
+
+		// If regex option is present, we ignore all SemVer constraints
+		regex, _ := regexp.Compile(source.Regex)
+		if !regex.MatchString(identifier) {
+			// Does not match regex string provided
+			continue
+		}
+
+		tagRef := repo.Tag(identifier)
+
+		digest, found, err := headOrGet(tagRef, opts...)
+		if err != nil {
+			return resource.CheckResponse{}, fmt.Errorf("get tag digest: %w", err)
+		}
+
+		if !found {
+			continue
+		}
+
+		tagDigests[identifier] = digest.String()
+
+		digestVersions[digest.String()] = identifier
+	}
+
+	var tagVersions TagVersionsString
+	for digest, version := range digestVersions {
+		tagVersions = append(tagVersions, TagVersionString{
+			TagName: versionTags[version].TagStr(),
+			Digest:  digest,
+			Version: version,
+		})
+	}
+
+	// sort.Sort(tagVersions)
+
+	response := resource.CheckResponse{}
+
+	for _, ver := range tagVersions {
+		response = append(response, resource.Version{
+			Tag:    ver.TagName,
+			Digest: ver.Digest,
+		})
+	}
+
+	return response, nil
+}
+
 type TagVersion struct {
 	TagName string
 	Digest  string
 	Version *semver.Version
 }
 
+type TagVersionString struct {
+	TagName string
+	Digest  string
+	Version string
+}
+
 type TagVersions []TagVersion
+type TagVersionsString []TagVersionString
 
 func (vs TagVersions) Len() int           { return len(vs) }
 func (vs TagVersions) Less(i, j int) bool { return vs[i].Version.LessThan(vs[j].Version) }
 func (vs TagVersions) Swap(i, j int)      { vs[i], vs[j] = vs[j], vs[i] }
+
+func (vs TagVersionsString) Len() int      { return len(vs) }
+func (vs TagVersionsString) Swap(i, j int) { vs[i], vs[j] = vs[j], vs[i] }
 
 func checkTag(tag name.Tag, source resource.Source, version *resource.Version, opts ...remote.Option) (resource.CheckResponse, error) {
 	digest, found, err := headOrGet(tag, opts...)
